@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { PlaybackEngine, type PlayState, type TrainerSettings } from '../audio/PlaybackEngine'
-import type { LoopRange } from '../audio/schedule'
+import type { LoopRange, SwingSetting } from '../audio/schedule'
 import type { ScoreLayout, ScoreViewHandle } from '../components/ScoreView'
 import { keepInView } from '../core/autoScroll'
 import { hitBus } from '../core/hitBus'
@@ -47,6 +47,7 @@ export function usePlayback({ timeline, layout, scoreRef }: UsePlaybackArgs) {
   const [playAlong, setPlayAlongState] = useState(false)
   const [loop, setLoop] = useState<LoopSelection | null>(null)
   const [trainer, setTrainerState] = useState<TrainerSettings>(DEFAULT_TRAINER)
+  const [swing, setSwingState] = useState<SwingSetting>('score')
 
   // A new score resets tempo and loop. React's recommended way to reset state
   // when an input changes is to compare with the previous value during render.
@@ -55,6 +56,7 @@ export function usePlayback({ timeline, layout, scoreRef }: UsePlaybackArgs) {
     setLoadedTimeline(timeline)
     setTempoState(clampBpm(timeline?.tempo ?? 100))
     setLoop(null)
+    setSwingState('score')
   }
 
   // The latest cursor steps, readable from callbacks without re-subscribing.
@@ -99,6 +101,7 @@ export function usePlayback({ timeline, layout, scoreRef }: UsePlaybackArgs) {
     if (!timeline) return
     engine.load(timeline)
     engine.setTempo(clampBpm(timeline.tempo))
+    void engine.setSwing('score')
     stores.step.set(-1)
     stores.loopPasses.set(0)
   }, [engine, timeline, stores])
@@ -204,6 +207,13 @@ export function usePlayback({ timeline, layout, scoreRef }: UsePlaybackArgs) {
     },
     [engine],
   )
+  const setSwing = useCallback(
+    (value: SwingSetting) => {
+      void engine.setSwing(value)
+      setSwingState(value)
+    },
+    [engine],
+  )
   const setTrainer = useCallback(
     (t: TrainerSettings) => {
       engine.setTrainer(t)
@@ -261,6 +271,8 @@ export function usePlayback({ timeline, layout, scoreRef }: UsePlaybackArgs) {
     loopingWholeScore: !selectedRange && !!loopRange,
     trainer,
     setTrainer,
+    swing,
+    setSwing,
     playPause,
     stop,
     rewind,

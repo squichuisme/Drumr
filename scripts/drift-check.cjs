@@ -125,14 +125,22 @@ const BPM = 160
   const rows = [...perBar.values()]
   const flat = (k) => rows.flatMap((r) => r[k])
   const drift = flat('drift'), visual = flat('visual'), audio = flat('audio')
-  const growth = Math.abs(mean(perBar.get(32).visual) - mean(perBar.get(1).visual))
+  // Drift = a steady trend in the cursor offset over time. Fit a straight line
+  // through ALL cursor moves (offset vs. bar) and see how far it moves over 32
+  // bars. (Comparing just bar 1 with bar 32 is noisy: each bar has only 8 moves,
+  // and screen frames quantise them to ~16 ms.)
+  const points = timings.map((t) => ({ x: barOf(t.stepIndex), y: (t.drawnAt - t.scheduledTime) * 1000 }))
+  const mx = mean(points.map((p) => p.x))
+  const my = mean(points.map((p) => p.y))
+  const slope = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / points.reduce((s, p) => s + (p.x - mx) ** 2, 0)
+  const growth = Math.abs(slope * 31)
   const late = visual.filter((v) => Math.abs(v) > 17).length
   console.log('')
   console.log(`audio drift:        max ${pct(drift, 1).toFixed(3)} ms over all 32 bars`)
   console.log(`cursor vs audio:    mean ${mean(visual).toFixed(1)} ms, p95 ${pct(visual, 0.95).toFixed(1)} ms, max ${pct(visual, 1).toFixed(1)} ms (${late} of ${visual.length} moves more than one 60 Hz frame off)`)
   console.log(`rendered audio:     onsets match the cursor with median ${pct(audio, 0.5).toFixed(1)} ms, p95 ${pct(audio, 0.95).toFixed(1)} ms (${audio.length} matched)`)
-  console.log(`drift bar 1 → 32:   cursor offset changed by ${growth.toFixed(1)} ms`)
-  const pass = pct(drift, 1) < 1 && pct(visual, 0.95) < 17 && growth < 5 && pct(audio, 0.5) < 5 && perBar.get(32).audio.length > 0
+  console.log(`drift bar 1 → 32:   cursor offset trend ${growth.toFixed(2)} ms over 32 bars (line fitted through all ${points.length} moves)`)
+  const pass = pct(drift, 1) < 1 && pct(visual, 0.95) < 17 && growth < 3 && pct(audio, 0.5) < 5 && perBar.get(32).audio.length > 0
   if (errors.length) console.log('page errors:', errors)
   console.log(pass ? 'PASS: cursor, lights and audio stay locked through bar 32' : 'FAIL')
   process.exit(pass ? 0 : 1)

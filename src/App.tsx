@@ -10,7 +10,7 @@ import { loadScoreFile } from './core/loadScoreFile'
 import { parseScore } from './core/parseScore'
 import type { DiagramMode, ScoreTimeline } from './core/types'
 import { usePlayback } from './hooks/usePlayback'
-import { SAMPLES } from './samples'
+import { SAMPLE_GROUPS, SAMPLES } from './samples'
 
 interface LoadedScore {
   /** Where the score came from: a sample id or "file:<name>". */
@@ -30,6 +30,7 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scoreRef = useRef<ScoreViewHandle>(null)
+  const scorePanelRef = useRef<HTMLElement>(null)
 
   // Parse the MusicXML into timed drum events (see src/core/parseScore.ts).
   const parsed = useMemo((): { timeline: ScoreTimeline | null; error: string | null } => {
@@ -84,6 +85,9 @@ export default function App() {
     setLoadError(null)
     setLayout(EMPTY_LAYOUT)
     setScore(next)
+    // Start the new score at the top (the panel scrolls on desktop, the page on phones).
+    scorePanelRef.current?.scrollTo({ top: 0 })
+    window.scrollTo({ top: 0 })
   }
 
   function pickSample(id: string) {
@@ -166,10 +170,14 @@ export default function App() {
             <span className="field-label">Score</span>
             <select value={score.source.startsWith('file:') ? '' : score.source} onChange={(e) => pickSample(e.target.value)}>
               {score.source.startsWith('file:') && <option value="">{score.label}</option>}
-              {SAMPLES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
+              {SAMPLE_GROUPS.map(({ group, samples }) => (
+                <optgroup key={group} label={group}>
+                  {samples.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
@@ -222,7 +230,7 @@ export default function App() {
 
       <main className="workspace">
         <div className="score-wrap">
-          <section className="score-panel" aria-label="Sheet music">
+          <section ref={scorePanelRef} className="score-panel" aria-label="Sheet music">
             <ScoreView ref={scoreRef} xml={score.xml} onLayout={handleLayout}>
               <MeasureOverlay
                 boxes={layout.measureBoxes}

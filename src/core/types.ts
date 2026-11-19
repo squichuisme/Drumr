@@ -57,6 +57,18 @@ export interface TimeSignature {
   beatType: number
 }
 
+/**
+ * Swing feel. Jazz is written in straight 8th notes, but each pair of 8ths
+ * is played long-short: the off-beat 8th comes late. `ratio` is how far
+ * through the pair the off-beat note falls: 0.5 = straight, 2/3 = triplet
+ * swing (the usual jazz feel), 0.75 = hard swing / dotted feel.
+ */
+export interface Swing {
+  ratio: number
+  /** Which notes swing: 8th-note pairs in each beat (usual), or 16th-note pairs. */
+  unit: 'eighth' | '16th'
+}
+
 /** A measure as it occurs in playback order (a repeated measure appears more than once). */
 export interface TimelineMeasure {
   /** Position in playback order. */
@@ -68,6 +80,8 @@ export interface TimelineMeasure {
   startBeat: number
   lengthBeats: number
   timeSignature: TimeSignature
+  /** Swing feel written for this measure, or null for straight 8ths. */
+  swing: Swing | null
 }
 
 export type DiagramMode = 'kit' | 'marching'

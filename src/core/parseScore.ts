@@ -19,7 +19,7 @@
 import { DRUM_MAP, SNARE_FAMILY, type DrumMapConfig, type NoteheadShape } from '../config/drumMap'
 import { normalizeNotehead, resolveVoice, type NoteFacts } from './drumMapping'
 import { unrollRepeats, type RepeatMarks } from './repeats'
-import type { Hand, NoteEvent, ScoreTimeline, TimeSignature, TimelineMeasure, Voice } from './types'
+import type { Hand, NoteEvent, ScoreTimeline, Swing, TimeSignature, TimelineMeasure, Voice } from './types'
 
 // ---------------------------------------------------------------------------
 // Internal shapes
@@ -62,6 +62,7 @@ interface WrittenMeasure {
   number: string
   lengthBeats: number
   timeSignature: TimeSignature
+  swing: Swing | null
   repeat: RepeatMarks
   notes: WrittenNote[]
 }
@@ -73,6 +74,8 @@ interface PartState {
   clefs: Map<string, Clef>
   staffLines: Map<string, number>
   edgeMode: boolean
+  /** Swing feel in force (null = straight). A marking applies from its measure onward. */
+  swing: Swing | null
   currentEnding: number[] | null
 }
 
@@ -165,6 +168,7 @@ export function parseScore(xml: string, map: DrumMapConfig = DRUM_MAP): ScoreTim
       clefs: new Map(),
       staffLines: new Map(),
       edgeMode: false,
+      swing: null,
       currentEnding: null,
     }
     kids(part, 'measure').forEach((measureEl, mi) => {
@@ -194,6 +198,7 @@ export function parseScore(xml: string, map: DrumMapConfig = DRUM_MAP): ScoreTim
       startBeat: beat,
       lengthBeats: m.lengthBeats,
       timeSignature: m.timeSignature,
+      swing: m.swing,
     })
     for (const note of m.notes) events.push(...noteToEvents(note, beat, index, sourceIndex, map))
     beat += m.lengthBeats
@@ -285,19 +290,28 @@ function parseMeasure(
         break
 
       case 'direction': {
+        // An explicit MusicXML swing setting wins over style text like "Swing".
+        const explicitSwing = readSwing(kid(el, 'sound'))
+        if (explicitSwing !== undefined) state.swing = explicitSwing
         for (const words of path(el, 'direction-type', 'words')) {
           const text = words.textContent ?? ''
           if (map.textModes.edgeOn.test(text)) state.edgeMode = true
           else if (map.textModes.edgeOff.test(text)) state.edgeMode = false
           else if (map.stickingPattern.test(text)) pendingSticking = toHand(text)
+          else if (explicitSwing === undefined && map.textModes.swingOn.test(text))
+            state.swing = { ratio: map.swingRatio, unit: 'eighth' }
+          else if (explicitSwing === undefined && map.textModes.swingOff.test(text)) state.swing = null
         }
         tempo ??= readTempo(el)
         break
       }
 
-      case 'sound':
+      case 'sound': {
         tempo ??= numberAttr(el, 'tempo')
+        const swing = readSwing(el)
+        if (swing !== undefined) state.swing = swing
         break
+      }
 
       case 'backup':
         pos -= Number(kidText(el, 'duration') ?? 0)
@@ -395,6 +409,7 @@ function parseMeasure(
       number: measureEl.getAttribute('number') ?? '',
       lengthBeats: round(lengthBeats),
       timeSignature: { ...state.time },
+      swing: state.swing,
       repeat,
       notes,
     },
@@ -538,6 +553,24 @@ function readTempo(direction: Element): number | null {
   let unit = unitInQuarters[kidText(metronome, 'beat-unit') ?? 'quarter'] ?? 1
   if (kid(metronome, 'beat-unit-dot')) unit *= 1.5
   return round(perMinute * unit)
+}
+
+/**
+ * MusicXML 4 playback swing: <sound><swing><first>2</first><second>1</second></swing></sound>
+ * means each 8th-note pair is played in a 2:1 ratio (triplet swing);
+ * <swing><straight/></swing> switches back to straight 8ths.
+ * Returns undefined when the element says nothing about swing.
+ */
+function readSwing(sound: Element | undefined): Swing | null | undefined {
+  const swing = sound ? kid(sound, 'swing') : undefined
+  if (!swing) return undefined
+  if (kid(swing, 'straight')) return null
+  const first = Number(kidText(swing, 'first'))
+  const second = Number(kidText(swing, 'second'))
+  if (!(first > 0 && second > 0)) return null
+  const ratio = first / (first + second)
+  if (Math.abs(ratio - 0.5) < 1e-6) return null
+  return { ratio, unit: kidText(swing, 'swing-type') === '16th' ? '16th' : 'eighth' }
 }
 
 function numberAttr(el: Element, name: string): number | null {

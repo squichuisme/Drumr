@@ -18,7 +18,7 @@ import { indexAtBeat } from '../core/timeline'
 import type { ScoreTimeline, Voice } from '../core/types'
 import { DrumKit } from './drumKit'
 import { Metronome } from './metronome'
-import { planSession, PPQ, ticksToScoreBeat, type LoopRange, type ScheduleItem, type SessionPlan } from './schedule'
+import { planSession, PPQ, ticksToScoreBeat, type LoopRange, type ScheduleItem, type SessionPlan, type SwingSetting } from './schedule'
 
 export type PlayState = 'stopped' | 'playing' | 'paused'
 
@@ -74,6 +74,7 @@ export class PlaybackEngine {
   private countIn = true
   private muteDrums = false
   private loop: LoopRange | null = null
+  private swing: SwingSetting = 'score'
   private trainer: TrainerSettings = { enabled: false, stepBpm: 5, everyLoops: 2, maxBpm: 160 }
 
   /** Dev hook: called for every cursor move with its timing (see the drift check). */
@@ -179,6 +180,18 @@ export class PlaybackEngine {
     this.trainer = trainer
   }
 
+  /** Change the swing feel. While playing, playback picks up again from the current bar. */
+  async setSwing(swing: SwingSetting): Promise<void> {
+    if (swing === this.swing) return
+    this.swing = swing
+    if (this.state === 'stopped' || !this.timeline) return
+    const wasPlaying = this.state === 'playing'
+    const resumeAt = this.loop ? this.loop.startBeat : this.measureStartAt(this.currentBeat())
+    this.hardStop()
+    this.startBeat = resumeAt
+    if (wasPlaying) await this.play()
+  }
+
   /** Set or clear the loop. While playing, playback restarts at the loop (or carries on from the current bar). */
   async setLoop(loop: LoopRange | null): Promise<void> {
     const wasPlaying = this.state === 'playing'
@@ -236,7 +249,7 @@ export class PlaybackEngine {
     this.plan = planSession(
       timeline,
       this.steps.map((s) => s.beat),
-      { startBeat: this.startBeat, loop: this.loop, countIn: this.countIn },
+      { startBeat: this.startBeat, loop: this.loop, countIn: this.countIn, swing: this.swing },
     )
     this.transport.bpm.value = this.tempo
     this.loopPasses = 0

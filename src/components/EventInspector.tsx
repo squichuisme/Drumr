@@ -31,6 +31,7 @@ export function EventInspector({ timeline }: { timeline: ScoreTimeline }) {
           {timeline.events.length} hits · {timeline.measures.length} measures played
           {timeline.measures.length !== timeline.sourceMeasureCount && ` (${timeline.sourceMeasureCount} written)`} ·{' '}
           {timeline.tempo} BPM{timeline.tempoFromScore ? '' : ' (default)'}
+          {timeline.measures.some((m) => m.swing) && ' · swing 8ths (beats below are as written)'}
         </span>
       </summary>
 

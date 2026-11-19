@@ -93,6 +93,8 @@ export function PracticeBar({ id, open, playback: p, timeline, numbers, selectin
         <Toggle on={p.playAlong} onChange={p.setPlayAlong} label="Play along (mute drums)" icon="mute" />
       </div>
 
+      <SwingPicker playback={p} timeline={timeline} />
+
       <div className="transport-group trainer-group">
         <Toggle on={p.trainer.enabled} onChange={(enabled) => p.setTrainer({ ...p.trainer, enabled })} label="Speed trainer" icon="trainer" />
         <span className={`trainer-settings${p.trainer.enabled ? '' : ' is-off'}`}>
@@ -106,6 +108,41 @@ export function PracticeBar({ id, open, playback: p, timeline, numbers, selectin
         <LoopStatus playback={p} />
       </div>
     </div>
+  )
+}
+
+/** Swing presets: how late the off-beat 8th is played, as a fraction of the beat. */
+const SWING_PRESETS: { label: string; ratio: number }[] = [
+  { label: 'Straight', ratio: 0.5 },
+  { label: 'Light (3:2)', ratio: 0.6 },
+  { label: 'Triplet (2:1)', ratio: 2 / 3 },
+  { label: 'Hard (3:1)', ratio: 0.75 },
+]
+
+function swingName(ratio: number): string {
+  const preset = SWING_PRESETS.find((p) => Math.abs(p.ratio - ratio) < 0.01)
+  return preset ? preset.label.toLowerCase() : `${Math.round(ratio * 100)}%`
+}
+
+/**
+ * Swing feel: play the score as written, or force a feel — e.g. hear the jazz
+ * samples straight to compare, or practise a shuffle on a rock groove.
+ */
+function SwingPicker({ playback: p, timeline }: { playback: Playback; timeline: ScoreTimeline | null }) {
+  const written = timeline?.measures.find((m) => m.swing)?.swing ?? null
+  const value = p.swing === 'score' ? 'score' : String(p.swing)
+  return (
+    <label className="transport-group swing-group">
+      <span className="group-label">Swing</span>
+      <select value={value} onChange={(e) => p.setSwing(e.target.value === 'score' ? 'score' : Number(e.target.value))}>
+        <option value="score">As written ({written ? `${swingName(written.ratio)} swing` : 'straight'})</option>
+        {SWING_PRESETS.map((preset) => (
+          <option key={preset.label} value={String(preset.ratio)}>
+            {preset.label}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 

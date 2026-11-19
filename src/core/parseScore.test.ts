@@ -5,6 +5,10 @@ import rockBeatXml from '../samples/rock-beat.musicxml?raw'
 import grooveXml from '../samples/groove-with-fills.musicxml?raw'
 import marchingXml from '../samples/marching-8-on-a-hand.musicxml?raw'
 import driftXml from '../samples/drift-check-32-bars.musicxml?raw'
+import jazzTimeXml from '../samples/jazz-time.musicxml?raw'
+import jazzCompingXml from '../samples/jazz-comping.musicxml?raw'
+import jazzWaltzXml from '../samples/jazz-waltz.musicxml?raw'
+import jazzFillsXml from '../samples/jazz-triplet-fills.musicxml?raw'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -468,5 +472,140 @@ describe('robustness', () => {
 
   it('rejects non-MusicXML', () => {
     expect(() => parseScore('<html></html>')).toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Jazz samples and swing
+// ---------------------------------------------------------------------------
+
+const beatsIn = (t: ScoreTimeline, voice: Voice, measureIndex: number) =>
+  eventsOf(t, voice, measureIndex).map((e) => e.beat - t.measures[measureIndex].startBeat)
+
+describe('sample: jazz time (ride pattern & hi-hat)', () => {
+  const t = parseScore(jazzTimeXml)
+
+  it('reads the swing marking for every bar', () => {
+    expect(t.tempo).toBe(120)
+    expect(t.measures.every((m) => m.swing?.unit === 'eighth')).toBe(true)
+    expect(t.measures[0].swing!.ratio).toBeCloseTo(2 / 3, 9)
+    expect(t.warnings).toEqual([])
+  })
+
+  it('keeps the written (straight) positions of the ride pattern: 1, 2 &, 3, 4 &', () => {
+    // Swing is applied at playback; the timeline stays as written.
+    expect(beatsIn(t, 'ride', 0)).toEqual([0, 1, 1.5, 2, 3, 3.5])
+  })
+
+  it('closes the hi-hat with the foot on 2 and 4', () => {
+    expect(beatsIn(t, 'hihatPedal', 0)).toEqual([1, 3])
+  })
+
+  it('feathers the bass drum: soft quarter notes from bar 3', () => {
+    expect(eventsOf(t, 'kick', 0)).toHaveLength(0)
+    const feathered = eventsOf(t, 'kick', 2)
+    expect(feathered.map((e) => e.beat)).toEqual([8, 9, 10, 11])
+    expect(feathered.every((e) => e.ghost && e.velocity < 0.5)).toBe(true)
+  })
+
+  it('repeats bars 1-4, then ends on a crash', () => {
+    expect(t.measures.map((m) => m.sourceIndex)).toEqual([0, 1, 2, 3, 0, 1, 2, 3, 4])
+    expect(voicesAt(t, 32)).toEqual(['crash', 'kick', 'ride'])
+  })
+})
+
+describe('sample: jazz comping', () => {
+  const t = parseScore(jazzCompingXml)
+
+  it('plays comping figures on the snare under the ride', () => {
+    expect(beatsIn(t, 'snare', 0)).toEqual([3.5]) // "and" of 4
+    expect(beatsIn(t, 'snare', 1)).toEqual([1.5]) // "and" of 2
+    expect(beatsIn(t, 'snare', 2)).toEqual([0, 1.5]) // Charleston
+    expect(beatsIn(t, 'ride', 2)).toEqual([0, 1, 1.5, 2, 3, 3.5])
+  })
+
+  it('accents the bass drum bomb and plays ghost notes softly', () => {
+    const [bomb] = eventsOf(t, 'kick', 3)
+    expect(bomb.beat - 12).toBe(3.5)
+    expect(bomb.accent).toBe(true)
+    const snares = eventsOf(t, 'snare', 4)
+    expect(snares.map((e) => [e.beat - 16, e.ghost, e.accent])).toEqual([
+      [0.5, true, false],
+      [2.5, true, false],
+      [3.5, false, true],
+    ])
+  })
+})
+
+describe('sample: jazz waltz', () => {
+  const t = parseScore(jazzWaltzXml)
+
+  it('is in 3/4 with the waltz ride pattern 1, 2 &, 3', () => {
+    expect(t.measures.every((m) => m.lengthBeats === 3 && m.timeSignature.beats === 3)).toBe(true)
+    expect(beatsIn(t, 'ride', 0)).toEqual([0, 1, 1.5, 2])
+    expect(beatsIn(t, 'hihatPedal', 0)).toEqual([1])
+    expect(t.measures[0].swing).not.toBeNull()
+  })
+
+  it('repeats the first four bars', () => {
+    expect(t.measures).toHaveLength(4 * 2 + 5)
+    expect(t.totalBeats).toBe(39)
+  })
+})
+
+describe('sample: jazz time & triplet fills', () => {
+  const t = parseScore(jazzFillsXml)
+
+  it('plays a bar of 8th-note triplets around the kit with alternating sticking', () => {
+    const fill = eventsInMeasure(t, 3).filter((e) => e.voice !== 'hihatPedal')
+    expect(fill).toHaveLength(12)
+    fill.forEach((e, k) => expect(e.beat).toBeCloseTo(12 + k / 3, 6))
+    expect(fill.map((e) => e.voice)).toEqual([
+      ...Array(5).fill('snare'),
+      ...Array(2).fill('tom1'),
+      ...Array(2).fill('tom2'),
+      ...Array(3).fill('floorTom'),
+    ])
+    expect(fill.map((e) => e.sticking).join('')).toBe('RL'.repeat(6))
+    expect(fill.filter((e) => e.accent).map((e) => Math.round((e.beat - 12) * 3))).toEqual([0, 3, 6, 9])
+  })
+
+  it('puts the bass drum on the last triplet of each beat in the hand-hand-foot fill', () => {
+    const kicks = eventsOf(t, 'kick', 7)
+    expect(kicks).toHaveLength(4)
+    kicks.forEach((e, beat) => expect(e.beat).toBeCloseTo(28 + beat + 2 / 3, 6))
+  })
+})
+
+describe('swing markings', () => {
+  const swingSound = (first: number, second: number, type = 'eighth') =>
+    `<direction><direction-type><words>Swing</words></direction-type><sound><swing><first>${first}</first><second>${second}</second><swing-type>${type}</swing-type></swing></sound></direction>`
+  const words = (w: string) => `<direction><direction-type><words>${w}</words></direction-type></direction>`
+
+  it('reads MusicXML <swing> ratios and types', () => {
+    const t = parseScore(score([swingSound(3, 1) + n('C', 5, 16), n('C', 5, 16)]))
+    expect(t.measures.map((m) => m.swing)).toEqual([
+      { ratio: 0.75, unit: 'eighth' },
+      { ratio: 0.75, unit: 'eighth' },
+    ])
+    const sixteenths = parseScore(score([swingSound(2, 1, '16th') + n('C', 5, 16)]))
+    expect(sixteenths.measures[0].swing?.unit).toBe('16th')
+  })
+
+  it('switches back to straight with <straight/> or "Straight 8ths" text', () => {
+    const straight = '<direction><direction-type><words>Straight</words></direction-type><sound><swing><straight/></swing></sound></direction>'
+    const t = parseScore(score([swingSound(2, 1) + n('C', 5, 16), straight + n('C', 5, 16), words('Swing') + n('C', 5, 16), words('Straight 8ths') + n('C', 5, 16)]))
+    expect(t.measures.map((m) => m.swing !== null)).toEqual([true, false, true, false])
+  })
+
+  it('treats style text like "Medium Swing" or "Shuffle" as triplet swing', () => {
+    for (const text of ['Medium Swing', 'Shuffle', 'Swing feel', 'Jazz Waltz']) {
+      const t = parseScore(score([words(text) + n('C', 5, 16)]))
+      expect(t.measures[0].swing?.ratio, text).toBeCloseTo(2 / 3, 9)
+    }
+  })
+
+  it('leaves scores without a marking straight', () => {
+    expect(parseScore(rockBeatXml).measures.every((m) => m.swing === null)).toBe(true)
   })
 })

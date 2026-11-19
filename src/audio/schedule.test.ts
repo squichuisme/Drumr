@@ -3,6 +3,9 @@ import { parseScore } from '../core/parseScore'
 import { clickUnitBeats, planSession, PPQ, ticksToScoreBeat, ticksToSeconds, type ScheduleItem } from './schedule'
 import driftXml from '../samples/drift-check-32-bars.musicxml?raw'
 import rockXml from '../samples/rock-beat.musicxml?raw'
+import jazzTimeXml from '../samples/jazz-time.musicxml?raw'
+import jazzFillsXml from '../samples/jazz-triplet-fills.musicxml?raw'
+import { makeSwingWarp } from './schedule'
 
 const drift = parseScore(driftXml)
 // Cursor steps at every distinct hit beat (what OSMD produces for these samples).
@@ -92,5 +95,65 @@ describe('metronome click unit', () => {
     expect(clickUnitBeats({ beats: 6, beatType: 8 })).toBe(1.5)
     expect(clickUnitBeats({ beats: 12, beatType: 8 })).toBe(1.5)
     expect(clickUnitBeats({ beats: 3, beatType: 8 })).toBe(0.5)
+  })
+})
+
+describe('swing playback', () => {
+  const jazz = parseScore(jazzTimeXml)
+  const jazzSteps = stepsFor(jazz.events.map((e) => e.beat))
+  const hitTicksAt = (plan: ReturnType<typeof planSession>, writtenBeat: number) => {
+    const groups = of(plan.items, 'hits')
+    const target = groups.find((h) => h.events[0].beat === writtenBeat)
+    return target?.ticks
+  }
+
+  it('plays the "and" of 2 on the last triplet of the beat, cursor included', () => {
+    const plan = planSession(jazz, jazzSteps, { startBeat: 0, loop: null, countIn: false })
+    // Written at beat 1.5 (straight), played at 1 + 2/3.
+    expect(hitTicksAt(plan, 1.5)).toBe(Math.round((1 + 2 / 3) * PPQ))
+    const step = of(plan.items, 'step').find((s) => jazzSteps[s.stepIndex] === 1.5)!
+    expect(step.ticks).toBe(hitTicksAt(plan, 1.5))
+    // Downbeats don't move.
+    expect(hitTicksAt(plan, 1)).toBe(PPQ)
+    expect(hitTicksAt(plan, 2)).toBe(2 * PPQ)
+  })
+
+  it('leaves metronome clicks on the beat', () => {
+    const plan = planSession(jazz, jazzSteps, { startBeat: 0, loop: null, countIn: false })
+    expect(of(plan.items, 'click').every((c) => c.ticks % PPQ === 0)).toBe(true)
+  })
+
+  it('can be forced straight, or harder, from the swing control', () => {
+    const straight = planSession(jazz, jazzSteps, { startBeat: 0, loop: null, countIn: false, swing: 0.5 })
+    expect(hitTicksAt(straight, 1.5)).toBe(1.5 * PPQ)
+    const hard = planSession(jazz, jazzSteps, { startBeat: 0, loop: null, countIn: false, swing: 0.75 })
+    expect(hitTicksAt(hard, 1.5)).toBe(1.75 * PPQ)
+  })
+
+  it('can swing a straight score (e.g. practise a shuffle on the rock beat)', () => {
+    const rock = parseScore(rockXml)
+    const plan = planSession(rock, [], { startBeat: 0, loop: null, countIn: false, swing: 2 / 3 })
+    expect(hitTicksAt(plan, 0.5)).toBe(Math.round((2 / 3) * PPQ))
+  })
+
+  it('does not swing triplets', () => {
+    const fills = parseScore(jazzFillsXml)
+    const warp = makeSwingWarp(fills)
+    expect(fills.measures[3].swing).not.toBeNull()
+    for (const k of [0, 1, 2, 3, 4, 5]) expect(warp(12 + k / 3)).toBeCloseTo(12 + k / 3, 9)
+  })
+
+  it('moves a flam into the "and" together with its main note', () => {
+    const warp = makeSwingWarp(jazz)
+    expect(warp(1.5 - 0.06, true)).toBeCloseTo(1 + 2 / 3 - 0.06, 9)
+    expect(warp(1.5 - 0.06, false)).toBeCloseTo(1.44, 9) // a real note there isn't a flam
+  })
+
+  it('swings 16th pairs when the score says swing-type 16th', () => {
+    const t = { ...jazz, measures: jazz.measures.map((m) => ({ ...m, swing: { ratio: 2 / 3, unit: '16th' as const } })) }
+    const warp = makeSwingWarp(t)
+    expect(warp(0.25)).toBeCloseTo(1 / 3, 9)
+    expect(warp(0.5)).toBe(0.5)
+    expect(warp(0.75)).toBeCloseTo(0.5 + 1 / 3, 9)
   })
 })

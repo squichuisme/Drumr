@@ -10,17 +10,17 @@
  *   - notes use <unpitched> with <display-step>/<display-octave> for their
  *     position on the staff, an <instrument id="..."/> back-reference,
  *     and a <notehead> for cymbals (x, circle-x),
- *   - hands are written in voice 1 (stems up) and feet in voice 2
- *     (stems down), separated by <backup>.
+ *   - cymbals and hands are written in voice 1 (stems up) and feet in
+ *     voice 2 (stems down), separated by <backup>,
+ *   - swing is marked the MusicXML 4 way: <sound><swing> plus "Swing" text.
  *
- * Run with:  node scripts/generate-samples.mjs
+ * Run with:  node scripts/generate-samples.mjs   (or npm run samples)
  */
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'samples')
-const DIVISIONS = 4 // divisions per quarter note, so 1 division = one 16th note
 
 // ---------------------------------------------------------------------------
 // Instrument palettes
@@ -57,11 +57,15 @@ const MARCHING = {
 // ---------------------------------------------------------------------------
 // A tiny pattern language so the grooves below stay readable.
 //
-//   "2:hh+snare!@R"  =  an 8th note (2 sixteenths) playing hi-hat and snare
-//                       together, accented (!), sticking R (@R)
+//   "2:hh+snare!@R"  =  an 8th note (2 sixteenths) playing hi-hat and an
+//                       accented (!) snare together, sticking R (@R)
+//   "4:kick~"        =  a quarter-note ghost/feathered (~) kick, written in parentheses
+//   "T:snare"        =  one note of an 8th-note triplet (three per beat)
 //   "4:r"            =  a quarter rest
+// Durations are counted in 16th notes (2 = 8th, 4 = quarter …), or T.
 // ---------------------------------------------------------------------------
 
+/** Note type and dots for a length in 16ths. */
 const TYPES = {
   1: ['16th', 0],
   2: ['eighth', 0],
@@ -78,16 +82,20 @@ function seq(pattern) {
     .trim()
     .split(/\s+/)
     .map((token) => {
-      const m = token.match(/^(\d+):([a-z0-9+]+)(!?)(?:@([RL]))?$/)
+      const m = token.match(/^(\d+|T):([a-z0-9!~+]+)(?:@([RL]))?$/)
       if (!m) throw new Error(`Bad token "${token}"`)
-      const dur = Number(m[1])
-      if (!TYPES[dur]) throw new Error(`Unsupported duration ${dur} in "${token}"`)
-      return {
-        dur,
-        keys: m[2] === 'r' ? null : m[2].split('+'),
-        accent: m[3] === '!',
-        sticking: m[4] ?? null,
-      }
+      const triplet = m[1] === 'T'
+      const sixteenths = triplet ? 4 / 3 : Number(m[1])
+      if (!triplet && !TYPES[sixteenths]) throw new Error(`Unsupported duration ${m[1]} in "${token}"`)
+      const keys =
+        m[2] === 'r'
+          ? null
+          : m[2].split('+').map((part) => {
+              const k = part.match(/^([a-z0-9]+)([!~]*)$/)
+              if (!k) throw new Error(`Bad instrument "${part}" in "${token}"`)
+              return { key: k[1], accent: k[2].includes('!'), ghost: k[2].includes('~') }
+            })
+      return { sixteenths, triplet, keys, sticking: m[3] ?? null }
     })
 }
 
@@ -95,22 +103,22 @@ function seq(pattern) {
 const rep = (pattern, n) => Array(n).fill(pattern).join(' ')
 
 // ---------------------------------------------------------------------------
-// Beaming: group 8ths/16ths inside each quarter-note beat, like MuseScore.
-// The app ignores beams, but OSMD uses them to draw the score.
+// Beaming and tuplets: group 8ths/16ths/triplets inside each quarter-note
+// beat, like MuseScore. The app ignores beams, but OSMD uses them to draw.
 // ---------------------------------------------------------------------------
 
-function computeBeams(notes, beatLen = DIVISIONS) {
+function computeBeams(notes, divisions) {
   let pos = 0
   const beats = new Map()
   notes.forEach((n, i) => {
-    const beat = Math.floor(pos / beatLen)
+    const beat = Math.floor((pos + 1e-9) / divisions)
     if (!beats.has(beat)) beats.set(beat, [])
     beats.get(beat).push(i)
     pos += n.dur
   })
   const beams = notes.map(() => [])
   for (const idxs of beats.values()) {
-    const beamable = idxs.filter((i) => notes[i].keys && notes[i].dur < DIVISIONS)
+    const beamable = idxs.filter((i) => notes[i].keys && notes[i].dur < divisions)
     // A beam only makes sense when the whole beat is beamable notes in a row.
     if (beamable.length < 2 || beamable.length !== idxs.length) continue
     beamable.forEach((i, k) => {
@@ -118,10 +126,11 @@ function computeBeams(notes, beatLen = DIVISIONS) {
       beams[i].push([1, level1])
     })
     // Second beam for 16ths.
+    const is16 = (i) => !notes[i].triplet && notes[i].sixteenths === 1
     beamable.forEach((i, k) => {
-      if (notes[i].dur !== 1) return
-      const prev16 = k > 0 && notes[beamable[k - 1]].dur === 1
-      const next16 = k < beamable.length - 1 && notes[beamable[k + 1]].dur === 1
+      if (!is16(i)) return
+      const prev16 = k > 0 && is16(beamable[k - 1])
+      const next16 = k < beamable.length - 1 && is16(beamable[k + 1])
       let v
       if (prev16 && next16) v = 'continue'
       else if (next16) v = 'begin'
@@ -131,6 +140,24 @@ function computeBeams(notes, beatLen = DIVISIONS) {
     })
   }
   return beams
+}
+
+/** Mark the first and last note of every group of three triplet notes. */
+function computeTuplets(notes) {
+  const marks = notes.map(() => null)
+  let run = 0
+  notes.forEach((n, i) => {
+    if (!n.triplet) {
+      if (run % 3 !== 0) throw new Error('Triplets must come in groups of three')
+      run = 0
+      return
+    }
+    if (run % 3 === 0) marks[i] = 'start'
+    if (run % 3 === 2) marks[i] = 'stop'
+    run++
+  })
+  if (run % 3 !== 0) throw new Error('Triplets must come in groups of three')
+  return marks
 }
 
 // ---------------------------------------------------------------------------
@@ -161,20 +188,22 @@ ${midis}
   </part-list>`
 }
 
-function noteXml(palette, n, voice, beams) {
+const TRIPLET_XML = '        <time-modification>\n          <actual-notes>3</actual-notes>\n          <normal-notes>2</normal-notes>\n        </time-modification>'
+
+function noteXml(palette, n, voice, beams, tuplet) {
   const stem = voice === 1 ? 'up' : 'down'
-  const [type, dots] = TYPES[n.dur]
-  const dotXml = dots ? '\n        <dot/>' : ''
+  const [type, dots] = n.triplet ? ['eighth', 0] : TYPES[n.sixteenths]
+  const tupletXml = tuplet ? `\n          <tuplet type="${tuplet}" bracket="yes"/>` : ''
   if (!n.keys) {
-    return `      <note>
-        <rest/>
-        <duration>${n.dur}</duration>
-        <voice>${voice}</voice>
-        <type>${type}</type>${dotXml}
-      </note>`
+    const lines = ['      <note>', '        <rest/>', `        <duration>${n.dur}</duration>`, `        <voice>${voice}</voice>`, `        <type>${type}</type>`]
+    if (dots) lines.push('        <dot/>')
+    if (n.triplet) lines.push(TRIPLET_XML)
+    if (tuplet) lines.push(`        <notations>${tupletXml}\n        </notations>`)
+    lines.push('      </note>')
+    return lines.join('\n')
   }
   return n.keys
-    .map((key, k) => {
+    .map(({ key, accent, ghost }, k) => {
       const inst = palette[key]
       if (!inst) throw new Error(`Unknown instrument key "${key}"`)
       const lines = ['      <note>']
@@ -187,11 +216,17 @@ function noteXml(palette, n, voice, beams) {
         `        <type>${type}</type>`,
       )
       if (dots) lines.push('        <dot/>')
+      if (n.triplet) lines.push(TRIPLET_XML)
       lines.push(`        <stem>${stem}</stem>`)
-      if (inst.head) lines.push(`        <notehead>${inst.head}</notehead>`)
+      // Ghost / feathered notes are written with the notehead in parentheses.
+      if (ghost) lines.push(`        <notehead parentheses="yes">${inst.head ?? 'normal'}</notehead>`)
+      else if (inst.head) lines.push(`        <notehead>${inst.head}</notehead>`)
       if (k === 0) for (const [num, val] of beams) lines.push(`        <beam number="${num}">${val}</beam>`)
-      // Articulations and sticking go on the first note of a chord only.
-      if (k === 0 && n.accent) lines.push('        <notations>\n          <articulations>\n            <accent/>\n          </articulations>\n        </notations>')
+      const notations = []
+      if (k === 0 && tuplet) notations.push(tupletXml)
+      if (accent) notations.push('\n          <articulations>\n            <accent/>\n          </articulations>')
+      if (notations.length) lines.push(`        <notations>${notations.join('')}\n        </notations>`)
+      // Sticking goes on the first note of a chord only.
       if (k === 0 && n.sticking)
         lines.push(`        <lyric number="1">\n          <syllabic>single</syllabic>\n          <text>${n.sticking}</text>\n        </lyric>`)
       lines.push('      </note>')
@@ -208,15 +243,34 @@ function wordsXml(text) {
       </direction>`
 }
 
+/** "Swing" text plus MusicXML 4's playback instruction: off-beat 8ths in a 2:1 (triplet) ratio. */
+function swingXml(text) {
+  return `      <direction placement="above">
+        <direction-type>
+          <words font-weight="bold">${esc(text)}</words>
+        </direction-type>
+        <sound>
+          <swing>
+            <first>2</first>
+            <second>1</second>
+            <swing-type>eighth</swing-type>
+          </swing>
+        </sound>
+      </direction>`
+}
+
 /**
  * Build a complete score.
- * measures: [{ v1: string, v2?: string, words?: string, repeatStart?, repeatEnd?, ending?: '1'|'2', endingEnd?, wordsBefore?: {index, text}[] }]
+ * measures: [{ v1: string, v2?: string, words?: string, wordsAt?: {index, text}[],
+ *              repeatStart?, repeatEnd?, ending?: '1'|'2', endingEnd? }]
+ * swing: text for a swing marking (e.g. "Medium swing"), or omitted for straight 8ths.
+ * divisions: MusicXML divisions per quarter note (must be divisible by 3 for triplets).
  */
-function buildScore({ title, palette, partName, abbr, tempo, time = [4, 4], measures, oneLine = false }) {
+function buildScore({ title, palette, partName, abbr, tempo, time = [4, 4], measures, oneLine = false, swing, divisions = 4 }) {
   // Assign MuseScore-style instrument ids: "P1-I" + (GM note + 1).
   for (const inst of Object.values(palette)) inst.id = `P1-I${inst.midi + 1}`
 
-  const measureLen = (DIVISIONS * 4 * time[0]) / time[1]
+  const measureLen = (divisions * 4 * time[0]) / time[1]
   const body = measures
     .map((m, mi) => {
       const out = []
@@ -231,7 +285,7 @@ function buildScore({ title, palette, partName, abbr, tempo, time = [4, 4], meas
       }
       if (mi === 0) {
         out.push(`      <attributes>
-        <divisions>${DIVISIONS}</divisions>
+        <divisions>${divisions}</divisions>
         <key>
           <fifths>0</fifths>
           <mode>none</mode>
@@ -254,8 +308,12 @@ function buildScore({ title, palette, partName, abbr, tempo, time = [4, 4], meas
         </direction-type>
         <sound tempo="${tempo}"/>
       </direction>`)
+        if (swing) out.push(swingXml(swing))
       }
-      if (m.words) out.push(wordsXml(m.words))
+      // On bar 1 the swing marking sits at the start, so a label there moves
+      // to beat 2 to keep the two texts from running together.
+      const labelAtBeat2 = mi === 0 && !!swing && !!m.words
+      if (m.words && !labelAtBeat2) out.push(wordsXml(m.words))
 
       for (const [voice, pattern] of [
         [1, m.v1],
@@ -263,14 +321,20 @@ function buildScore({ title, palette, partName, abbr, tempo, time = [4, 4], meas
       ]) {
         if (!pattern) continue
         const notes = seq(pattern)
+        for (const n of notes) {
+          n.dur = n.triplet ? divisions / 3 : (n.sixteenths * divisions) / 4
+          if (!Number.isInteger(n.dur)) throw new Error(`${title}: divisions ${divisions} can't express ${n.triplet ? 'triplets' : n.sixteenths + ' sixteenths'}`)
+        }
         const total = notes.reduce((s, n) => s + n.dur, 0)
-        if (total !== measureLen) throw new Error(`${title} m${num} v${voice}: ${total} sixteenths, expected ${measureLen}`)
+        if (total !== measureLen) throw new Error(`${title} m${num} v${voice}: ${total} divisions, expected ${measureLen}`)
         if (voice === 2) out.push(`      <backup>\n        <duration>${measureLen}</duration>\n      </backup>`)
-        const beams = computeBeams(notes)
+        const beams = computeBeams(notes, divisions)
+        const tuplets = computeTuplets(notes)
         notes.forEach((n, i) => {
           const w = m.wordsAt?.find((x) => x.index === i && voice === 1)
           if (w) out.push(wordsXml(w.text))
-          out.push(noteXml(palette, n, voice, beams[i]))
+          if (labelAtBeat2 && voice === 1 && i === 1) out.push(wordsXml(m.words))
+          out.push(noteXml(palette, n, voice, beams[i], tuplets[i]))
         })
       }
 
@@ -308,19 +372,19 @@ ${body}
 `
 }
 
+const KIT_SCORE = { palette: KIT, partName: 'Drumset', abbr: 'D. Set' }
+
 // ---------------------------------------------------------------------------
-// The samples
+// Rock and groove samples
 // ---------------------------------------------------------------------------
 
 const BACKBEAT = '2:hh 2:hh 2:hh+snare 2:hh 2:hh 2:hh 2:hh+snare 2:hh'
 const KICK_1_3 = '4:kick 4:r 4:kick 4:r'
 
-/** 1. Basic rock beat: four bars played twice, then a crash to end. */
+/** Basic rock beat: four bars played twice, then a crash to end. */
 const rockBeat = buildScore({
+  ...KIT_SCORE,
   title: 'Basic Rock Beat',
-  palette: KIT,
-  partName: 'Drumset',
-  abbr: 'D. Set',
   tempo: 100,
   measures: [
     { v1: BACKBEAT, v2: KICK_1_3, repeatStart: true },
@@ -332,14 +396,12 @@ const rockBeat = buildScore({
   ],
 })
 
-/** 2. 8th-note groove with fills, using 1st/2nd endings. */
+/** 8th-note groove with fills, using 1st/2nd endings. */
 const GROOVE = '2:hh 2:hh 2:hh+snare 2:hh 2:hh 2:hh 2:hh+snare 2:hh'
 const GROOVE_KICK = '4:kick 2:r 2:kick 2:r 2:kick 4:r'
 const grooveFills = buildScore({
+  ...KIT_SCORE,
   title: '8th-Note Groove with Fills',
-  palette: KIT,
-  partName: 'Drumset',
-  abbr: 'D. Set',
   tempo: 108,
   measures: [
     { v1: '2:crash 2:hh 2:hh+snare 2:hh 2:hh 2:hh 2:hh+snare 2:hh', v2: GROOVE_KICK, repeatStart: true },
@@ -367,7 +429,113 @@ const grooveFills = buildScore({
   ],
 })
 
-/** 3. Marching snare: 8-on-a-hand, accent/tap, and a zone check bar. */
+// ---------------------------------------------------------------------------
+// Jazz samples. All are written the way jazz charts are: straight 8ths with
+// a "Swing" marking, which the app plays with the off-beat 8th late (on the
+// last note of a triplet). Cymbals are stems up; snare, bass drum and hi-hat
+// foot are stems down, as in most jazz drumming books.
+// ---------------------------------------------------------------------------
+
+/** The jazz ride pattern ("spang, spang-a-lang"): 1, 2 &, 3, 4 &. */
+const RIDE = '4:ride 2:ride 2:ride 4:ride 2:ride 2:ride'
+/** Hi-hat closed with the foot on beats 2 and 4. */
+const HH_2_4 = '4:r 4:pedal 4:r 4:pedal'
+/** "Feathered" bass drum: very soft quarter notes, felt more than heard. */
+const FEATHER = '4:kick~ 4:kick~+pedal 4:kick~ 4:kick~+pedal'
+const ENDING_4_4 = { v1: '4:ride+crash 4:r 8:r', v2: '4:kick 4:pedal 8:r' }
+
+/** Jazz 1. The basic time feel: ride pattern, hi-hat on 2 & 4, feathered bass drum. */
+const jazzTime = buildScore({
+  ...KIT_SCORE,
+  title: 'Jazz Time: Ride Pattern & Hi-Hat',
+  tempo: 120,
+  swing: 'Medium swing',
+  measures: [
+    { v1: RIDE, v2: HH_2_4, words: 'Ride + hi-hat on 2 & 4', repeatStart: true },
+    { v1: RIDE, v2: HH_2_4 },
+    { v1: RIDE, v2: FEATHER, words: 'Add the feathered bass drum' },
+    { v1: RIDE, v2: FEATHER, repeatEnd: true },
+    ENDING_4_4,
+  ],
+})
+
+/** Jazz 2. Comping: short snare and bass-drum figures under steady time. */
+const jazzComping = buildScore({
+  ...KIT_SCORE,
+  title: 'Jazz Comping: Snare & Bass Drum',
+  tempo: 132,
+  swing: 'Swing',
+  measures: [
+    { v1: RIDE, v2: '4:r 2:pedal 2:r 4:r 2:pedal 2:snare', words: '"and" of 4' },
+    { v1: RIDE, v2: '4:r 2:pedal 2:snare 4:r 2:pedal 2:r', words: '"and" of 2' },
+    // The Charleston rhythm: beat 1 and the "and" of 2.
+    { v1: RIDE, v2: '2:snare! 2:r 2:pedal 2:snare 4:r 2:pedal 2:r', words: 'Charleston' },
+    // A "bomb": an accented bass drum on the "and" of 4, set up by the snare.
+    { v1: RIDE, v2: '4:r 2:pedal 2:r 4:r 2:pedal+snare 2:kick!', words: 'bass drum bomb' },
+    { v1: RIDE, v2: '2:r 2:snare~ 2:pedal 2:r 2:r 2:snare~ 2:pedal 2:snare!', words: 'ghost notes' },
+    { v1: RIDE, v2: '2:kick 2:r 2:pedal 2:snare 2:r 2:kick 2:pedal 2:snare', words: 'snare / bass conversation' },
+    { v1: RIDE, v2: '2:r 2:snare 2:pedal 2:r 4:kick 2:pedal 2:r', words: '"and" of 1' },
+    { v1: RIDE, v2: '4:r 2:pedal 2:r 2:r 2:snare 2:pedal 2:kick!' },
+    ENDING_4_4,
+  ],
+})
+
+/** Jazz 3. Jazz waltz in 3/4. */
+const WALTZ_RIDE = '4:ride 2:ride 2:ride 4:ride'
+const jazzWaltz = buildScore({
+  ...KIT_SCORE,
+  title: 'Jazz Waltz',
+  tempo: 152,
+  time: [3, 4],
+  swing: 'Jazz waltz',
+  measures: [
+    { v1: WALTZ_RIDE, v2: '4:kick~ 4:pedal 4:r', words: 'Ride 1, 2 &, 3 · hi-hat on 2', repeatStart: true },
+    { v1: WALTZ_RIDE, v2: '4:kick~ 4:pedal 4:r' },
+    { v1: WALTZ_RIDE, v2: '4:kick~ 4:pedal 2:r 2:snare' },
+    { v1: WALTZ_RIDE, v2: '4:kick~ 4:pedal 2:r 2:kick', repeatEnd: true },
+    { v1: WALTZ_RIDE, v2: '4:kick~ 4:pedal 4:pedal', words: 'Hi-hat on 2 & 3' },
+    { v1: WALTZ_RIDE, v2: '4:kick~ 4:pedal 4:pedal' },
+    { v1: WALTZ_RIDE, v2: '4:kick~ 2:pedal 2:snare 4:pedal' },
+    { v1: WALTZ_RIDE, v2: '2:kick 2:snare~ 4:pedal 2:r 2:snare!' },
+    { v1: '4:ride+crash 8:r', v2: '4:kick 8:r' },
+  ],
+})
+
+/** Jazz 4. Three bars of time, then a bar of triplet fill — the classic 4-bar phrase. */
+const jazzFills = buildScore({
+  ...KIT_SCORE,
+  title: 'Jazz Time & Triplet Fills',
+  tempo: 140,
+  swing: 'Swing',
+  divisions: 12, // 12 per quarter so 8th-note triplets (4 each) fit exactly
+  measures: [
+    { v1: RIDE, v2: FEATHER, words: '3 bars of time' },
+    { v1: RIDE, v2: FEATHER },
+    { v1: RIDE, v2: '4:kick~ 4:kick~+pedal 4:kick~ 2:kick~+pedal 2:snare' },
+    // One bar of 8th-note triplets around the kit, single strokes.
+    {
+      v1: 'T:snare!@R T:snare@L T:snare@R T:snare!@L T:snare@R T:tom1@L T:tom1!@R T:tom2@L T:tom2@R T:floor!@L T:floor@R T:floor@L',
+      v2: HH_2_4,
+      words: 'Fill: triplets around the kit',
+    },
+    { v1: RIDE, v2: FEATHER, words: '3 bars of time' },
+    { v1: RIDE, v2: FEATHER },
+    { v1: RIDE, v2: FEATHER },
+    // The classic "hand, hand, foot" triplet: R L then bass drum.
+    {
+      v1: 'T:snare!@R T:snare@L T:kick T:tom1!@R T:tom1@L T:kick T:tom2!@R T:tom2@L T:kick T:floor!@R T:floor@L T:kick',
+      v2: HH_2_4,
+      words: 'Fill: hand-hand-foot triplets',
+    },
+    ENDING_4_4,
+  ],
+})
+
+// ---------------------------------------------------------------------------
+// Marching and test samples
+// ---------------------------------------------------------------------------
+
+/** Marching snare: 8-on-a-hand, accent/tap, and a zone check bar. */
 const accentTap = (accentIndex) =>
   Array.from({ length: 16 }, (_, i) => `1:sn${i % 4 === accentIndex ? '!' : ''}@${i % 2 === 0 ? 'R' : 'L'}`).join(' ')
 
@@ -401,12 +569,10 @@ const marching = buildScore({
   ],
 })
 
-/** 4. Drift check: 32 bars at 160 BPM, crash on every 4th downbeat. */
+/** Drift check: 32 bars at 160 BPM, crash on every 4th downbeat. */
 const driftCheck = buildScore({
+  ...KIT_SCORE,
   title: 'Drift Check: 32 Bars at 160',
-  palette: KIT,
-  partName: 'Drumset',
-  abbr: 'D. Set',
   tempo: 160,
   measures: Array.from({ length: 32 }, (_, i) => ({
     v1: i % 4 === 0 ? '2:crash ' + BACKBEAT.split(' ').slice(1).join(' ') : BACKBEAT,
@@ -418,6 +584,10 @@ mkdirSync(OUT_DIR, { recursive: true })
 const files = {
   'rock-beat.musicxml': rockBeat,
   'groove-with-fills.musicxml': grooveFills,
+  'jazz-time.musicxml': jazzTime,
+  'jazz-comping.musicxml': jazzComping,
+  'jazz-waltz.musicxml': jazzWaltz,
+  'jazz-triplet-fills.musicxml': jazzFills,
   'marching-8-on-a-hand.musicxml': marching,
   'drift-check-32-bars.musicxml': driftCheck,
 }

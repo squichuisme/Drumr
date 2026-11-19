@@ -409,6 +409,10 @@ input:focus-visible,
 .trainer-settings.is-off {
   opacity: 0.55;
 }
+.swing-group select {
+  padding: 4px 8px;
+  font-size: 0.88rem;
+}
 .loop-status {
   color: var(--teal);
   font-weight: 600;

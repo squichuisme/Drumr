@@ -62,7 +62,9 @@ export interface DrumMapConfig {
   fiveLineStaff: Record<number, NoteheadRule>
   singleLineStaff: { onLine: NoteheadRule; above: NoteheadRule; below: NoteheadRule }
   /** Text instructions (e.g. "edge") that switch the snare zone until cancelled. */
-  textModes: { edgeOn: RegExp; edgeOff: RegExp }
+  textModes: { edgeOn: RegExp; edgeOff: RegExp; swingOn: RegExp; swingOff: RegExp }
+  /** How much a plain "Swing" text marking swings (off-beat 8th at this fraction of the beat). */
+  swingRatio: number
   /** A text, lyric or fingering counts as sticking if it matches this. */
   stickingPattern: RegExp
   velocity: { normal: number; accent: number; ghost: number; grace: number }
@@ -164,7 +166,14 @@ export const DRUM_MAP: DrumMapConfig = {
     edgeOn: /^\s*(edge|edges|on\s+edge)\s*\.?\s*$/i,
     // ... until "center", "norm." or "ord." switches back.
     edgeOff: /^\s*(center|centre|middle|norm\.?|normal|ord\.?|ordinario)\s*$/i,
+    // Style text that means "swing the 8ths" (used when the file has no
+    // MusicXML <swing> playback setting, which MuseScore 4 writes) ...
+    swingOn: /\b(swing|swung|shuffle)\b|\bjazz\s+waltz\b/i,
+    // ... and text that means straight 8ths again.
+    swingOff: /\bstraight\b|\beven\s+8ths?\b|\blatin\b|\bbossa\b|\bsamba\b/i,
   },
+
+  swingRatio: 2 / 3, // triplet swing
 
   // R, L, r, l — optionally with a lowercase grace letter in front ("lR" = flam).
   stickingPattern: /^\s*[rl]?[RLrl]\s*$/,
