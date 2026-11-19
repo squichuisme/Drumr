@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CountInOverlay } from './components/CountInOverlay'
 import { DiagramPanel } from './components/diagrams/DiagramPanel'
 import { EventInspector } from './components/EventInspector'
 import { ScoreView, type ScoreLayout, type ScoreViewHandle } from './components/ScoreView'
-import { hitBus } from './core/hitBus'
+import { TransportBar } from './components/TransportBar'
 import { loadScoreFile } from './core/loadScoreFile'
 import { parseScore } from './core/parseScore'
-import { eventsInRange, measureIndexAtBeat } from './core/timeline'
-import type { DiagramMode, NoteEvent, ScoreTimeline, Voice } from './core/types'
+import type { DiagramMode, ScoreTimeline } from './core/types'
+import { usePlayback } from './hooks/usePlayback'
 import { SAMPLES } from './samples'
 
 interface LoadedScore {
@@ -40,19 +41,17 @@ export default function App() {
 
   // Cursor positions measured from the rendered score (recomputed on resize).
   const [layout, setLayout] = useState<ScoreLayout>(EMPTY_LAYOUT)
-  const [stepIndex, setStepIndex] = useState(-1)
+  const playback = usePlayback({ timeline, layout, scoreRef })
 
   // Diagram mode follows the score's suggestion until the user picks one.
   const [modeChoice, setModeChoice] = useState<{ xml: string; mode: DiagramMode } | null>(null)
-  const mode: DiagramMode =
-    modeChoice?.xml === score.xml ? modeChoice.mode : (timeline?.suggestedMode ?? 'kit')
+  const mode: DiagramMode = modeChoice?.xml === score.xml ? modeChoice.mode : (timeline?.suggestedMode ?? 'kit')
 
   function selectScore(next: LoadedScore) {
+    playback.stop()
     setLoadError(null)
-    setScore(next)
-    setStepIndex(-1)
     setLayout(EMPTY_LAYOUT)
-    hitBus.reset()
+    setScore(next)
   }
 
   function pickSample(id: string) {
@@ -73,74 +72,52 @@ export default function App() {
     }
   }
 
-  // --- Manual stepping: move the cursor one position and light what's under it.
-  const goToStep = useCallback(
-    (target: number) => {
-      const steps = layout.steps
-      if (!timeline || steps.length === 0) return
-      const i = Math.min(Math.max(target, 0), steps.length - 1)
-      setStepIndex(i)
-      scoreRef.current?.showCursorAt(i)
-      const from = i > 0 ? steps[i - 1].beat : -Infinity
-      hitBus.emit(eventsInRange(timeline.events, from, steps[i].beat))
-    },
-    [layout, timeline],
-  )
+  const handleLayout = useCallback((next: ScoreLayout) => setLayout(next), [])
 
-  // Keep the cursor where it was after a re-layout (e.g. window resize).
-  const handleLayout = useCallback((next: ScoreLayout) => {
-    setLayout(next)
-    setStepIndex((i) => {
-      if (i >= 0 && i < next.steps.length) queueMicrotask(() => scoreRef.current?.showCursorAt(i))
-      return i < next.steps.length ? i : -1
-    })
-  }, [])
-
-  // Keyboard: ← / → step through the score.
+  // Keyboard shortcuts: Space play/pause, ← → step, Home back to start.
+  // Space means play/pause everywhere except text fields and dropdowns (a
+  // focused toggle button won't swallow it; Enter still activates buttons).
+  const { playPause, goToStep, rewind, stores } = playback
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    const isTextEntry = (t: HTMLElement) =>
+      !!t.closest('select, textarea, [contenteditable]') ||
+      (t instanceof HTMLInputElement && !['range', 'checkbox', 'button'].includes(t.type))
+    const onKeyDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
-      if (t.closest('input, select, textarea, [contenteditable]')) return
+      if (isTextEntry(t) || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === ' ') {
+        e.preventDefault()
+        if (!e.repeat) playPause()
+        return
+      }
+      if (t instanceof HTMLInputElement && t.type === 'range') return // arrows/Home adjust sliders
       if (e.key === 'ArrowRight') {
         e.preventDefault()
-        goToStep(stepIndex + 1)
+        goToStep(stores.step.get() + 1)
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        goToStep(stepIndex - 1)
+        goToStep(stores.step.get() - 1)
+      } else if (e.key === 'Home') {
+        e.preventDefault()
+        rewind()
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [goToStep, stepIndex])
-
-  // Tapping a drum on the diagram lights it (and, from feature 4, plays it).
-  const audition = useCallback((voice: Voice) => {
-    const hit: NoteEvent = {
-      beat: 0,
-      durationBeats: 0,
-      voice,
-      accent: false,
-      ghost: false,
-      grace: false,
-      velocity: 0.85,
-      sticking: null,
-      measureIndex: 0,
-      sourceMeasureIndex: 0,
+    // Stop a focused button from also "clicking" on Space release.
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === ' ' && !isTextEntry(e.target as HTMLElement)) e.preventDefault()
     }
-    hitBus.emit([hit])
-  }, [])
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [playPause, goToStep, rewind, stores])
 
   // Dev-only hook so automated browser checks can inspect timing data.
   useEffect(() => {
-    if (import.meta.env.DEV) Object.assign(window, { __sticktrack: { timeline, layout } })
-  }, [timeline, layout])
-
-  const position = useMemo(() => {
-    const step = layout.steps[stepIndex]
-    if (!timeline || !step) return null
-    const m = timeline.measures[measureIndexAtBeat(timeline, step.beat)]
-    return m ? { measure: m.number, beat: step.beat - m.startBeat + 1 } : null
-  }, [layout, stepIndex, timeline])
+    if (import.meta.env.DEV) Object.assign(window, { __sticktrack: { timeline, layout, engine: playback.engine } })
+  }, [timeline, layout, playback.engine])
 
   return (
     <div className="app">
@@ -153,10 +130,7 @@ export default function App() {
         <div className="score-picker">
           <label className="field">
             <span className="field-label">Score</span>
-            <select
-              value={score.source.startsWith('file:') ? '' : score.source}
-              onChange={(e) => pickSample(e.target.value)}
-            >
+            <select value={score.source.startsWith('file:') ? '' : score.source} onChange={(e) => pickSample(e.target.value)}>
               {score.source.startsWith('file:') && <option value="">{score.label}</option>}
               {SAMPLES.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -178,19 +152,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="transport" role="toolbar" aria-label="Playback">
-        <div className="transport-group">
-          <button type="button" className="btn btn--icon" onClick={() => goToStep(stepIndex - 1)} aria-label="Previous note">
-            ◀
-          </button>
-          <button type="button" className="btn btn--icon" onClick={() => goToStep(stepIndex + 1)} aria-label="Next note">
-            ▶
-          </button>
-          <span className="transport-readout">
-            {position ? `Measure ${position.measure} · beat ${formatBeat(position.beat)}` : 'Step through with ◀ ▶ or the arrow keys'}
-          </span>
-        </div>
-      </div>
+      <TransportBar playback={playback} timeline={timeline} layout={layout} />
 
       {(loadError || parsed.error) && (
         <div className="banner banner--error" role="alert">
@@ -199,26 +161,25 @@ export default function App() {
       )}
 
       <main className="workspace">
-        <section className="score-panel" aria-label="Sheet music">
-          <ScoreView ref={scoreRef} xml={score.xml} onLayout={handleLayout} />
-          {timeline && <EventInspector timeline={timeline} />}
-        </section>
+        <div className="score-wrap">
+          <section className="score-panel" aria-label="Sheet music">
+            <ScoreView ref={scoreRef} xml={score.xml} onLayout={handleLayout} />
+            {timeline && <EventInspector timeline={timeline} />}
+          </section>
+          <CountInOverlay store={playback.stores.countIn} />
+        </div>
 
         {timeline && (
           <DiagramPanel
             mode={mode}
             onModeChange={(m) => setModeChoice({ xml: score.xml, mode: m })}
             timeline={timeline}
-            onAudition={audition}
+            onAudition={playback.audition}
           />
         )}
       </main>
     </div>
   )
-}
-
-function formatBeat(beat: number): string {
-  return Number.isInteger(beat) ? String(beat) : beat.toFixed(2).replace(/0$/, '')
 }
 
 /** Original mark: a drum head seen from above with two crossed sticks. */

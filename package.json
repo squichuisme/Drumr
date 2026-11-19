@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "samples": "node scripts/generate-samples.mjs"
+    "samples": "node scripts/generate-samples.mjs",
+    "drift-check": "node scripts/drift-check.cjs"
   },
   "dependencies": {
     "jszip": "^3.10.2",

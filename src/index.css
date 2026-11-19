@@ -253,6 +253,111 @@ input:focus-visible,
   color: var(--muted);
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
+  min-width: 11.5em;
+}
+
+.icon {
+  flex: none;
+}
+
+.btn--play {
+  min-width: 108px;
+  padding: 6px 16px;
+}
+
+.tempo {
+  gap: 10px;
+}
+.tempo-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.tempo input[type='range'] {
+  width: clamp(110px, 16vw, 220px);
+  accent-color: var(--accent);
+}
+.tempo-value {
+  min-width: 4.6em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tempo-value small {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--teal);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+.chip:hover {
+  border-color: var(--muted);
+}
+.chip.is-on {
+  background: var(--teal-soft);
+  border-color: var(--teal);
+  color: var(--ink);
+  font-weight: 600;
+}
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Count-in numbers over the score */
+.count-in {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.count-in-number {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 64px;
+  font-weight: 800;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  animation: count-pop 0.35s ease-out;
+}
+@keyframes count-pop {
+  from {
+    transform: scale(1.25);
+    opacity: 0.4;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* ---------- Workspace: score on top, diagram below ---------- */
@@ -264,6 +369,14 @@ input:focus-visible,
   flex-direction: column;
   gap: 12px;
   padding: 12px 20px 14px;
+}
+
+.score-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .score-panel {
@@ -664,6 +777,9 @@ input:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .stroke {
     transition: none;
+  }
+  .count-in-number {
+    animation: none;
   }
 }
 
