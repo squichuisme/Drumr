@@ -1,6 +1,9 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { EventInspector } from './components/EventInspector'
 import { ScoreView } from './components/ScoreView'
 import { loadScoreFile } from './core/loadScoreFile'
+import { parseScore } from './core/parseScore'
+import type { ScoreTimeline } from './core/types'
 import { SAMPLES } from './samples'
 
 interface LoadedScore {
@@ -18,6 +21,16 @@ export default function App() {
   }))
   const [loadError, setLoadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Parse the MusicXML into timed drum events (see src/core/parseScore.ts).
+  const parsed = useMemo((): { timeline: ScoreTimeline | null; error: string | null } => {
+    try {
+      return { timeline: parseScore(score.xml), error: null }
+    } catch (err) {
+      return { timeline: null, error: err instanceof Error ? err.message : String(err) }
+    }
+  }, [score.xml])
+  const timeline = parsed.timeline
 
   function pickSample(id: string) {
     const sample = SAMPLES.find((s) => s.id === id)
@@ -76,9 +89,9 @@ export default function App() {
         </div>
       </header>
 
-      {loadError && (
+      {(loadError || parsed.error) && (
         <div className="banner banner--error" role="alert">
-          {loadError}
+          {loadError ?? `Couldn't read the drum notes: ${parsed.error}`}
         </div>
       )}
 
@@ -86,6 +99,8 @@ export default function App() {
         <section className="score-panel" aria-label="Sheet music">
           <ScoreView xml={score.xml} />
         </section>
+
+        {timeline && <EventInspector timeline={timeline} />}
       </main>
     </div>
   )
