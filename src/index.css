@@ -57,8 +57,8 @@
     --teal-soft: rgba(88, 180, 167, 0.18);
     --danger: #ff8a80;
     --paper: #f3efe6;
-    --shell: #1b1917;
-    --hoop: #6e675e;
+    --shell: #48413a;
+    --hoop: #7a7268;
     --head: #3b3631;
     --head-line: #5a534b;
     --metal: #9f874a;
@@ -229,6 +229,17 @@ input:focus-visible,
   color: var(--danger);
 }
 
+/* ---------- Controls (transport + practice) ---------- */
+
+.controls {
+  flex: none;
+}
+
+/* Only shown on small screens, where the practice tools fold away. */
+.chip.practice-toggle {
+  display: none;
+}
+
 /* ---------- Transport bar ---------- */
 
 .transport {
@@ -363,6 +374,11 @@ input:focus-visible,
 .btn--accent-outline {
   border-color: var(--teal);
   color: var(--teal);
+}
+.loop-range {
+  display: inline-flex;
+  gap: 8px;
+  white-space: nowrap;
 }
 .measure-input {
   display: inline-flex;
@@ -917,6 +933,75 @@ input:focus-visible,
   }
 }
 
+/* ---------- Phones and tablets: the page scrolls, controls stick to the
+   top and the instrument diagram sticks to the bottom of the screen. ---------- */
+
+@media (max-width: 1024px) {
+  .app {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .controls {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  }
+  .chip.practice-toggle {
+    display: inline-flex;
+  }
+  .practice[data-open='false'] {
+    display: none;
+  }
+  .workspace {
+    flex: none;
+    gap: 10px;
+    padding-bottom: 0;
+  }
+  .score-wrap,
+  .score-panel {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+  .count-in {
+    position: fixed;
+    z-index: 30;
+  }
+  .diagram-panel {
+    position: sticky;
+    bottom: 0;
+    z-index: 15;
+    height: clamp(190px, 34vh, 330px);
+    margin: 0 -20px;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.12);
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Narrow phones: icon-only toggles in the transport bar to save rows. */
+@media (max-width: 480px) {
+  .transport-toggles .chip:not(.practice-toggle) .chip-text {
+    display: none;
+  }
+  .transport-toggles .chip:not(.practice-toggle) {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+/* Short landscape phones: keep the diagram compact. */
+@media (max-width: 1024px) and (max-height: 520px) {
+  .diagram-panel {
+    height: 160px;
+  }
+}
+
 @media (max-width: 640px) {
   .topbar,
   .transport,
@@ -924,8 +1009,15 @@ input:focus-visible,
     padding-left: 16px;
     padding-right: 16px;
   }
+  .topbar {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .brand-name {
+    font-size: 1.05rem;
+  }
   .workspace {
-    padding: 10px 16px 12px;
+    padding: 10px 16px 0;
   }
   .score-picker {
     width: 100%;
@@ -933,7 +1025,47 @@ input:focus-visible,
   .score-picker .field {
     flex: 1;
   }
+  .score-picker .field-label {
+    display: none;
+  }
+  .transport {
+    gap: 8px 12px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .tempo {
+    flex: 1 1 100%;
+    order: 3;
+  }
+  .tempo input[type='range'] {
+    flex: 1;
+    width: auto;
+  }
+  .btn--play {
+    min-width: 92px;
+  }
+  .chip {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 0.85rem;
+  }
+  .transport-readout {
+    min-width: 0;
+    font-size: 0.82rem;
+  }
+  .practice {
+    gap: 8px 14px;
+  }
+  .diagram-panel {
+    margin: 0 -16px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
   .diagram-hint {
     display: none;
+  }
+  .segmented button {
+    padding: 4px 10px;
+    font-size: 0.82rem;
   }
 }

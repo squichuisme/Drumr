@@ -12,7 +12,8 @@ interface DiagramPanelProps {
 /** The instrument diagram with a switch between drum kit and marching snare. */
 export function DiagramPanel({ mode, onModeChange, timeline, onAudition }: DiagramPanelProps) {
   return (
-    <section className="diagram-panel" aria-label="Instrument">
+    // Sticks to the bottom of the screen on phones/tablets (see index.css).
+    <section className="diagram-panel" data-sticky="bottom" aria-label="Instrument">
       <div className="diagram-header">
         <div className="segmented" role="radiogroup" aria-label="Instrument diagram">
           {(

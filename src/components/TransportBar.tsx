@@ -9,7 +9,7 @@ interface TransportBarProps {
   playback: Playback
   timeline: ScoreTimeline | null
   layout: ScoreLayout
-  /** Extra controls (practice tools) shown at the end of the bar. */
+  /** Extra controls (the practice-tools toggle) shown next to the toggles. */
   children?: ReactNode
 }
 
@@ -65,9 +65,10 @@ export function TransportBar({ playback: p, timeline, layout, children }: Transp
         )}
       </div>
 
-      <div className="transport-group">
+      <div className="transport-group transport-toggles">
         <Toggle on={p.metronome} onChange={p.setMetronome} label="Metronome" icon="metronome" />
         <Toggle on={p.countIn} onChange={p.setCountIn} label="Count-in" icon="count" />
+        {children}
       </div>
 
       <div className="transport-group">
@@ -93,8 +94,6 @@ export function TransportBar({ playback: p, timeline, layout, children }: Transp
         </button>
         <PositionReadout playback={p} timeline={timeline} layout={layout} />
       </div>
-
-      {children}
     </div>
   )
 }
@@ -104,7 +103,7 @@ function PositionReadout({ playback, timeline, layout }: { playback: Playback; t
   const stepIndex = useStore(playback.stores.step)
   const countIn = useStore(playback.stores.countIn)
   const step = layout.steps[stepIndex]
-  let text = 'Press play, or step with ← →'
+  let text = 'Press play, or step through'
   if (countIn !== null) text = `Count-in ${countIn}…`
   else if (timeline && step) {
     const m = timeline.measures[measureIndexAtBeat(timeline, step.beat)]
@@ -123,9 +122,9 @@ function formatBeat(beat: number): string {
 
 export function Toggle({ on, onChange, label, icon }: { on: boolean; onChange: (on: boolean) => void; label: string; icon?: IconName }) {
   return (
-    <button type="button" className={`chip${on ? ' is-on' : ''}`} aria-pressed={on} onClick={() => onChange(!on)}>
+    <button type="button" className={`chip${on ? ' is-on' : ''}`} aria-pressed={on} onClick={() => onChange(!on)} title={label} aria-label={label}>
       {icon && <Icon name={icon} />}
-      {label}
+      <span className="chip-text">{label}</span>
     </button>
   )
 }

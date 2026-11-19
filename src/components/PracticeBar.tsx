@@ -4,6 +4,9 @@ import { MAX_BPM, MIN_BPM, type Playback } from '../hooks/usePlayback'
 import { Icon, Toggle } from './TransportBar'
 
 interface PracticeBarProps {
+  id?: string
+  /** Only matters on small screens, where the bar can be folded away. */
+  open: boolean
   playback: Playback
   timeline: ScoreTimeline | null
   /** Printed measure numbers by written measure index. */
@@ -14,7 +17,7 @@ interface PracticeBarProps {
 }
 
 /** Loop a range of measures, play along with muted drums, and the speed trainer. */
-export function PracticeBar({ playback: p, timeline, numbers, selecting, onStartSelecting, onCancelSelecting }: PracticeBarProps) {
+export function PracticeBar({ id, open, playback: p, timeline, numbers, selecting, onStartSelecting, onCancelSelecting }: PracticeBarProps) {
   const count = numbers.length
   const loop = p.loop
   const lo = loop ? Math.min(loop.startSource, loop.endSource) : 0
@@ -32,7 +35,7 @@ export function PracticeBar({ playback: p, timeline, numbers, selecting, onStart
   }
 
   return (
-    <div className="practice" role="toolbar" aria-label="Practice tools">
+    <div id={id} className="practice" data-open={open} role="toolbar" aria-label="Practice tools">
       <div className="transport-group loop-group">
         <span className="group-label">
           <Icon name="loop" /> Loop
@@ -49,6 +52,7 @@ export function PracticeBar({ playback: p, timeline, numbers, selecting, onStart
             <button type="button" className={`btn btn--small${loop ? '' : ' btn--accent-outline'}`} onClick={onStartSelecting} disabled={!timeline}>
               {loop ? 'Pick again' : 'Pick measures'}
             </button>
+            <span className="loop-range">
             <label className="measure-input">
               <span>from</span>
               <input
@@ -75,6 +79,7 @@ export function PracticeBar({ playback: p, timeline, numbers, selecting, onStart
                 aria-label="Loop to measure"
               />
             </label>
+            </span>
             {loop && (
               <button type="button" className="link-btn" onClick={() => p.setLoop(null)}>
                 clear

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { PlaybackEngine, type PlayState, type TrainerSettings } from '../audio/PlaybackEngine'
 import type { LoopRange } from '../audio/schedule'
 import type { ScoreLayout, ScoreViewHandle } from '../components/ScoreView'
+import { keepInView } from '../core/autoScroll'
 import { hitBus } from '../core/hitBus'
 import { createStore } from '../core/store'
 import { eventsInRange } from '../core/timeline'
@@ -65,8 +66,18 @@ export function usePlayback({ timeline, layout, scoreRef }: UsePlaybackArgs) {
   const moveCursor = useCallback(
     (i: number) => {
       stores.step.set(i)
-      if (i >= 0) scoreRef.current?.showCursorAt(i)
-      else scoreRef.current?.hideCursor()
+      if (i >= 0) {
+        scoreRef.current?.showCursorAt(i)
+        // Auto-scroll to follow the music. On the last note of a line, also
+        // bring the next line into view so the cursor never jumps off-screen.
+        const steps = stepsRef.current
+        const here = steps[i]
+        const next = steps[i + 1]
+        const newLine = here && next && Math.abs(next.y - here.y) > 4
+        keepInView(scoreRef.current?.cursorElement() ?? null, newLine ? next.y - here.y : 0, newLine ? next.height : 0)
+      } else {
+        scoreRef.current?.hideCursor()
+      }
     },
     [stores, scoreRef],
   )

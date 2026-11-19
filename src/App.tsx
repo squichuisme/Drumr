@@ -52,6 +52,9 @@ export default function App() {
     return numbers
   }, [timeline])
 
+  // On phones/tablets the practice tools fold away behind a button.
+  const [practiceOpen, setPracticeOpen] = useState(false)
+
   // Picking a loop by clicking two measures on the score.
   const [selecting, setSelecting] = useState<'start' | 'end' | null>(null)
   const [pendingStart, setPendingStart] = useState<number | null>(null)
@@ -183,18 +186,33 @@ export default function App() {
         </div>
       </header>
 
-      <TransportBar playback={playback} timeline={timeline} layout={layout} />
-      <PracticeBar
-        playback={playback}
-        timeline={timeline}
-        numbers={measureNumbers}
-        selecting={selecting}
-        onStartSelecting={() => {
-          setPendingStart(null)
-          setSelecting('start')
-        }}
-        onCancelSelecting={cancelSelecting}
-      />
+      {/* Controls stick to the top of the screen on phones/tablets. */}
+      <div className="controls" data-sticky="top">
+        <TransportBar playback={playback} timeline={timeline} layout={layout}>
+          <button
+            type="button"
+            className={`chip practice-toggle${practiceOpen || playback.loop || playback.playAlong || playback.trainer.enabled ? ' is-on' : ''}`}
+            aria-expanded={practiceOpen}
+            aria-controls="practice-tools"
+            onClick={() => setPracticeOpen((o) => !o)}
+          >
+            Practice {practiceOpen ? '▴' : '▾'}
+          </button>
+        </TransportBar>
+        <PracticeBar
+          id="practice-tools"
+          open={practiceOpen || selecting !== null}
+          playback={playback}
+          timeline={timeline}
+          numbers={measureNumbers}
+          selecting={selecting}
+          onStartSelecting={() => {
+            setPendingStart(null)
+            setSelecting('start')
+          }}
+          onCancelSelecting={cancelSelecting}
+        />
+      </div>
 
       {(loadError || parsed.error) && (
         <div className="banner banner--error" role="alert">
