@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CountInOverlay } from './components/CountInOverlay'
 import { DiagramPanel } from './components/diagrams/DiagramPanel'
 import { EventInspector } from './components/EventInspector'
+import { MeasureOverlay } from './components/MeasureOverlay'
+import { PracticeBar } from './components/PracticeBar'
 import { ScoreView, type ScoreLayout, type ScoreViewHandle } from './components/ScoreView'
 import { TransportBar } from './components/TransportBar'
 import { loadScoreFile } from './core/loadScoreFile'
@@ -43,12 +45,39 @@ export default function App() {
   const [layout, setLayout] = useState<ScoreLayout>(EMPTY_LAYOUT)
   const playback = usePlayback({ timeline, layout, scoreRef })
 
+  // Printed measure numbers, by written measure index (for labels and inputs).
+  const measureNumbers = useMemo(() => {
+    const numbers: string[] = []
+    for (const m of timeline?.measures ?? []) numbers[m.sourceIndex] ??= m.number
+    return numbers
+  }, [timeline])
+
+  // Picking a loop by clicking two measures on the score.
+  const [selecting, setSelecting] = useState<'start' | 'end' | null>(null)
+  const [pendingStart, setPendingStart] = useState<number | null>(null)
+  const cancelSelecting = useCallback(() => {
+    setSelecting(null)
+    setPendingStart(null)
+  }, [])
+  function handleMeasureClick(sourceIndex: number) {
+    if (selecting === 'start') {
+      setPendingStart(sourceIndex)
+      setSelecting('end')
+    } else if (selecting === 'end') {
+      playback.setLoop({ startSource: pendingStart ?? sourceIndex, endSource: sourceIndex })
+      cancelSelecting()
+    } else {
+      playback.startFromMeasure(sourceIndex)
+    }
+  }
+
   // Diagram mode follows the score's suggestion until the user picks one.
   const [modeChoice, setModeChoice] = useState<{ xml: string; mode: DiagramMode } | null>(null)
   const mode: DiagramMode = modeChoice?.xml === score.xml ? modeChoice.mode : (timeline?.suggestedMode ?? 'kit')
 
   function selectScore(next: LoadedScore) {
     playback.stop()
+    cancelSelecting()
     setLoadError(null)
     setLayout(EMPTY_LAYOUT)
     setScore(next)
@@ -100,6 +129,8 @@ export default function App() {
       } else if (e.key === 'Home') {
         e.preventDefault()
         rewind()
+      } else if (e.key === 'Escape') {
+        cancelSelecting()
       }
     }
     // Stop a focused button from also "clicking" on Space release.
@@ -112,7 +143,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [playPause, goToStep, rewind, stores])
+  }, [playPause, goToStep, rewind, stores, cancelSelecting])
 
   // Dev-only hook so automated browser checks can inspect timing data.
   useEffect(() => {
@@ -153,6 +184,17 @@ export default function App() {
       </header>
 
       <TransportBar playback={playback} timeline={timeline} layout={layout} />
+      <PracticeBar
+        playback={playback}
+        timeline={timeline}
+        numbers={measureNumbers}
+        selecting={selecting}
+        onStartSelecting={() => {
+          setPendingStart(null)
+          setSelecting('start')
+        }}
+        onCancelSelecting={cancelSelecting}
+      />
 
       {(loadError || parsed.error) && (
         <div className="banner banner--error" role="alert">
@@ -163,7 +205,17 @@ export default function App() {
       <main className="workspace">
         <div className="score-wrap">
           <section className="score-panel" aria-label="Sheet music">
-            <ScoreView ref={scoreRef} xml={score.xml} onLayout={handleLayout} />
+            <ScoreView ref={scoreRef} xml={score.xml} onLayout={handleLayout}>
+              <MeasureOverlay
+                boxes={layout.measureBoxes}
+                numbers={measureNumbers}
+                loop={playback.loop}
+                selecting={selecting}
+                pendingStart={pendingStart}
+                interactive={selecting !== null || playback.playState !== 'playing'}
+                onMeasureClick={handleMeasureClick}
+              />
+            </ScoreView>
             {timeline && <EventInspector timeline={timeline} />}
           </section>
           <CountInOverlay store={playback.stores.countIn} />

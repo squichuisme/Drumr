@@ -328,6 +328,140 @@ input:focus-visible,
   outline-offset: 2px;
 }
 
+/* ---------- Practice bar ---------- */
+
+.practice {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  padding: 7px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.hint {
+  color: var(--teal);
+  font-weight: 600;
+}
+.btn--small {
+  min-height: 30px;
+  padding: 3px 11px;
+  font-size: 0.88rem;
+}
+.btn--accent-outline {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+.measure-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.measure-input input,
+.num {
+  width: 3.6em;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.num--wide {
+  width: 4.4em;
+}
+.trainer-settings {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.trainer-settings.is-off {
+  opacity: 0.55;
+}
+.loop-status {
+  color: var(--teal);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Measure boxes over the score (loop + click targets) ---------- */
+
+.measure-layer {
+  position: absolute;
+  inset: 0;
+}
+.measure-box {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.measure-box:disabled {
+  pointer-events: none;
+}
+.measure-box:hover {
+  background: rgba(44, 122, 112, 0.07);
+}
+.measure-layer.is-selecting .measure-box:hover {
+  background: rgba(44, 122, 112, 0.16);
+  box-shadow: inset 0 0 0 2px rgba(44, 122, 112, 0.55);
+}
+.measure-box.in-loop {
+  background: rgba(44, 122, 112, 0.12);
+  border-radius: 0;
+}
+.measure-box.loop-start {
+  border-left: 3px solid #2c7a70;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+.measure-box.loop-end {
+  border-right: 3px solid #2c7a70;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+.measure-box.pending {
+  background: rgba(44, 122, 112, 0.2);
+  box-shadow: inset 0 0 0 2px #2c7a70;
+}
+.measure-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.loop-tag {
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #2c7a70;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 15px;
+}
+
 /* Count-in numbers over the score */
 .count-in {
   position: absolute;
@@ -785,7 +919,8 @@ input:focus-visible,
 
 @media (max-width: 640px) {
   .topbar,
-  .transport {
+  .transport,
+  .practice {
     padding-left: 16px;
     padding-right: 16px;
   }

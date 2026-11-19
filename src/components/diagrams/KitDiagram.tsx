@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { KIT_PIECE_FOR_VOICE, type KitPiece } from '../../config/drumMap'
 import { hitBus } from '../../core/hitBus'
 import type { Voice } from '../../core/types'
@@ -59,7 +59,7 @@ const P = {
 }
 
 export function KitDiagram({ onAudition }: KitDiagramProps) {
-  const reg = useMemo(createRegistry, [])
+  const [reg] = useState(createRegistry)
 
   useEffect(
     () =>

@@ -34,7 +34,7 @@ const ZONE_AUDITION: Record<MarchingZone, Voice> = {
 }
 
 export function MarchingDiagram({ timeline, onAudition }: MarchingDiagramProps) {
-  const reg = useMemo(createRegistry, [])
+  const [reg] = useState(createRegistry)
 
   // The sticking sequence (main strokes only), for the "what's next" ribbon.
   const sticking = useMemo(() => timeline.events.filter((e) => e.sticking && !e.grace), [timeline])
